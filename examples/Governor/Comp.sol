@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause
-pragma solidity ^0.8.10;
+pragma solidity >=0.8.13 <0.9.0;
 
 import "../../lib/Ciphertext.sol";
 import "../../lib/Common.sol";
@@ -55,7 +55,7 @@ contract Comp {
     event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
 
     /// @notice An event thats emitted when a delegate account's vote balance changes
-    event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
+    event DelegateVotesChanged(address indexed delegate, FHEUInt previousBalance, FHEUInt newBalance);
 
     /// @notice The standard EIP-20 transfer event
     event Transfer(address indexed from, address indexed to, FHEUInt amount);
@@ -67,26 +67,23 @@ contract Comp {
      * @notice Construct a new Comp token
      * @param account The initial account to grant all the tokens
      */
-    constructor(address account) public {
+    constructor(address account) {
       contractOwner = account;
     }
 
-    function initSupply(bytes calldata encryptedTotalSupply) public onlyContractOwner {
-        FHEUInt ts = Ciphertext.verify(encryptedTotalSupply);
-        totalSupply = ts;
-        balances[contractOwner] = ts;
-        emit Transfer(address(0), contractOwner, ts);
+    function initSupply(bytes calldata encryptedAmount) public onlyContractOwner {
+        FHEUInt amount = Ciphertext.verify(encryptedAmount);
+        totalSupply = amount;
+        balances[contractOwner] = amount;
+        emit Transfer(address(0), contractOwner, amount);
     }
 
     /**
-     * @notice Get the number of tokens `spender` is approved to spend on behalf of `account`
-     * @param account The address of the account holding the funds
-     * @param spender The address of the account spending the funds
-     * @return The number of tokens approved
+     * @notice Get the number of tokens held by the `account`
+     * @return reencrypted The number of tokens held
      */
-    function allowance(address account, address spender) public view returns (bytes memory) {
-        address owner = msg.sender;
-        return Ciphertext.reencrypt(_allowance(account, spender));
+    function balanceOf() public view returns (bytes memory reencrypted) {
+        return Ciphertext.reencrypt(balances[msg.sender]);
     }
 
     /**
@@ -94,36 +91,66 @@ contract Comp {
      * @dev This will overwrite the approval amount for `spender`
      *  and is subject to issues noted [here](https://eips.ethereum.org/EIPS/eip-20#approve)
      * @param spender The address of the account which may transfer tokens
-     * @param rawAmount The number of tokens that are approved (2^256-1 means infinite)
-     * @return Whether or not the approval succeeded
+     * @param encryptedAmount The number of tokens that are approved
+     * @return bool Whether or not the approval succeeded
      */
-    function approve(address spender, FHEUInt rawAmount) external returns (bool) {
-        FHEUInt amount;
-
-        allowances[msg.sender][spender] = amount;
-
-        emit Approval(msg.sender, spender, amount);
+    function approve(address spender, bytes calldata encryptedAmount) external returns (bool){
+        address owner = msg.sender;
+        _approve(owner, spender, Ciphertext.verify(encryptedAmount));
         return true;
     }
 
+    function _approve(address owner, address spender, FHEUInt amount) internal {
+        emit Approval(owner, spender, amount);
+        allowances[owner][spender] = amount;
+     }
+
     /**
-     * @notice Get the number of tokens held by the `account`
-     * @param account The address of the account to get the balance of
-     * @return reencrypted The number of tokens held
+     * @notice Get the number of tokens `spender` is approved to spend on behalf of `account`
+     * @param spender The address of the account spending the funds
+     * @return reencrypted The number of tokens approved
      */
-    function balanceOf(address account) external view returns (bytes memory reencrypted) {
-        return Ciphertext.reencrypt(balances[account]);
+    function allowance(address spender) public view returns (bytes memory reencrypted) {
+        address owner = msg.sender;
+        return Ciphertext.reencrypt(_allowance(owner, spender));
+    }
+
+    function _allowance(address owner, address spender) internal view returns (FHEUInt) {
+      return allowances[owner][spender];
     }
 
     /**
      * @notice Transfer `amount` tokens from `msg.sender` to `dst`
-     * @param dst The address of the destination account
-     * @param rawAmount The number of tokens to transfer
-     * @return Whether or not the transfer succeeded
+     * @param to The address of the destination account
+     * @param encryptedAmount The number of tokens to transfer
+     * @return bool Whether or not the transfer succeeded
      */
-    function transfer(address dst, uint rawAmount) external returns (bool) {
-        FHEUInt amount = safe96(rawAmount, "Comp::transfer: amount exceeds 96 bits");
-        _transferTokens(msg.sender, dst, amount);
+    function transfer(address to, bytes calldata encryptedAmount) public returns (bool) {
+        transfer(to, Ciphertext.verify(encryptedAmount));
+        return true;
+    }
+
+    /**
+     * @notice Transfer `amount` tokens from `msg.sender` to `dst`
+     * @param to The address of the destination account
+     * @param amount The number of tokens to transfer
+     * @return bool Whether or not the transfer succeeded
+     */
+    function transfer(address to, FHEUInt amount) public returns (bool) {
+        _transfer(msg.sender, to, amount);
+        return true;
+    }
+
+
+    /**
+     * @notice Transfer `amount` tokens from `src` to `dst`
+     * @param from The address of the source account
+     * @param to The address of the destination account
+     * @param encryptedAmount The number of tokens to transfer
+     * @return bool Whether or not the transfer succeeded
+     */
+    function transferFrom(address from, address to, bytes calldata encryptedAmount) public returns (bool) {
+        transferFrom(from, to, Ciphertext.verify(encryptedAmount));
         return true;
     }
 
@@ -132,20 +159,14 @@ contract Comp {
      * @param from The address of the source account
      * @param to The address of the destination account
      * @param amount The number of tokens to transfer
+     * @return bool Whether or not the transfer succeeded
      */
-    function transferFrom(address from, address to, FHEUInt amount) public {
+    function transferFrom(address from, address to, FHEUInt amount) public returns (bool) {
         address spender = msg.sender;
         _updateAllowance(from, spender, amount);
         _transfer(from, to, amount);
+        return true;
     }
-
-        function _approve(address owner, address spender, FHEUInt amount) internal {
-        allowances[owner][spender] = amount;
-     }
-
-     function _allowance(address owner, address spender) internal view returns (FHEUInt) {
-         return allowances[owner][spender];
-     }
 
      function _updateAllowance(address owner, address spender, FHEUInt amount) internal {
          FHEUInt currentAllowance = _allowance(owner, spender);
@@ -165,7 +186,51 @@ contract Comp {
         // Add to the balance of `to` and subract from the balance of `from`.
         balances[to] = FHEOps.add(balances[to], amount);
         balances[from] = FHEOps.sub(balances[from], amount);
+        emit Transfer(from, to, amount);
+
+        _moveDelegates(delegates[from], delegates[to], amount);
     }
+
+    function _moveDelegates(address srcRep, address dstRep, FHEUInt amount) internal {
+        if (srcRep != dstRep) {
+            if (srcRep != address(0)) {
+                uint32 srcRepNum = numCheckpoints[srcRep];
+                FHEUInt srcRepOld = FHEOps.cmux(FHEUInt.wrap(srcRepNum > 0 ? 1 : 0), checkpoints[srcRep][srcRepNum - 1].votes, FHEUInt.wrap(0));
+                FHEUInt srcRepNew = FHEOps.sub(srcRepOld, amount);
+                _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
+            }
+
+            if (dstRep != address(0)) {
+                uint32 dstRepNum = numCheckpoints[dstRep];
+                FHEUInt dstRepOld = FHEOps.cmux(FHEUInt.wrap(dstRepNum > 0 ? 1 : 0), checkpoints[dstRep][dstRepNum - 1].votes, FHEUInt.wrap(0));
+                FHEUInt dstRepNew = FHEOps.add(dstRepOld, amount);
+                _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
+            }
+        }
+    }
+
+
+    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, FHEUInt oldVotes, FHEUInt newVotes) internal {
+      uint32 blockNumber = safe32(block.number, "Comp::_writeCheckpoint: block number exceeds 32 bits");
+
+      if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
+          checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
+      } else {
+          checkpoints[delegatee][nCheckpoints] = Checkpoint(blockNumber, newVotes);
+          numCheckpoints[delegatee] = nCheckpoints + 1;
+      }
+
+      emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
+    }
+
+
+
+
+
+
+
+
+
 
     /**
      * @notice Delegate votes from `msg.sender` to `delegatee`
@@ -198,12 +263,11 @@ contract Comp {
     /**
      * @notice Gets the current votes balance for `account`
      * @param account The address to get votes balance
-     * @return reencrypted The number of current votes for `account`
+     * @return The number of current votes for `account`
      */
-    function getCurrentVotes(address account) external view returns (bytes memory reencrypted) {
+    function getCurrentVotes(address account) external view returns (FHEUInt) {
         uint32 nCheckpoints = numCheckpoints[account];
-        FHEUInt toReturn = FHEOps.cmux(FHEOps.lt(FHEUInt.wrap(0), FHEUInt.wrap(nCheckpoints)), checkpoints[account][nCheckpoints - 1].votes, FHEUInt.wrap(0));
-        return Ciphertext.reencrypt(toReturn); // Should be decrypt later
+        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : FHEUInt.wrap(0);
     }
 
     /**
@@ -211,21 +275,24 @@ contract Comp {
      * @dev Block number must be a finalized block or else this function will revert to prevent misinformation.
      * @param account The address of the account to check
      * @param blockNumber The block number to get the vote balance at
-     * @return reencrypted The number of votes the account had as of the given block
+     * @return The number of votes the account had as of the given block
      */
-    function getPriorVotes(address account, uint blockNumber) public view returns (bytes memory reencrypted) {
+    function getPriorVotes(address account, uint blockNumber) public view returns (FHEUInt) {
         require(blockNumber < block.number, "Comp::getPriorVotes: not yet determined");
 
         uint32 nCheckpoints = numCheckpoints[account];
+        if (nCheckpoints == 0) {
+            return FHEUInt.wrap(0);
+        }
 
         // First check most recent balance
         if (checkpoints[account][nCheckpoints - 1].fromBlock <= blockNumber) {
-            return Ciphertext.reencrypt(checkpoints[account][nCheckpoints - 1].votes);
+            return checkpoints[account][nCheckpoints - 1].votes;
         }
 
         // Next check implicit zero balance
         if (checkpoints[account][0].fromBlock > blockNumber) {
-            return Ciphertext.reencrypt(FHEUInt.wrap(0));
+            return FHEUInt.wrap(0);
         }
 
         uint32 lower = 0;
@@ -234,14 +301,14 @@ contract Comp {
             uint32 center = upper - (upper - lower) / 2; // ceil, avoiding overflow
             Checkpoint memory cp = checkpoints[account][center];
             if (cp.fromBlock == blockNumber) {
-                return Ciphertext.reencrypt(cp.votes);
+                return cp.votes;
             } else if (cp.fromBlock < blockNumber) {
                 lower = center;
             } else {
                 upper = center - 1;
             }
         }
-        return Ciphertext.reencrypt(checkpoints[account][lower].votes);
+        return checkpoints[account][lower].votes;
     }
 
     function _delegate(address delegator, address delegatee) internal {
@@ -254,67 +321,9 @@ contract Comp {
         _moveDelegates(currentDelegate, delegatee, delegatorBalance);
     }
 
-    function _transferTokens(address src, address dst, FHEUInt amount) internal {
-        require(src != address(0), "Comp::_transferTokens: cannot transfer from the zero address");
-        require(dst != address(0), "Comp::_transferTokens: cannot transfer to the zero address");
-
-        balances[src] = sub96(balances[src], amount, "Comp::_transferTokens: transfer amount exceeds balance");
-        balances[dst] = add96(balances[dst], amount, "Comp::_transferTokens: transfer amount overflows");
-        emit Transfer(src, dst, amount);
-
-        _moveDelegates(delegates[src], delegates[dst], amount);
-    }
-
-    function _moveDelegates(address srcRep, address dstRep, FHEUInt amount) internal {
-        if (srcRep != dstRep && amount > 0) {
-            if (srcRep != address(0)) {
-                uint32 srcRepNum = numCheckpoints[srcRep];
-                FHEUInt srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
-                FHEUInt srcRepNew = sub96(srcRepOld, amount, "Comp::_moveVotes: vote amount underflows");
-                _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
-            }
-
-            if (dstRep != address(0)) {
-                uint32 dstRepNum = numCheckpoints[dstRep];
-                FHEUInt dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
-                FHEUInt dstRepNew = add96(dstRepOld, amount, "Comp::_moveVotes: vote amount overflows");
-                _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
-            }
-        }
-    }
-
-    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, FHEUInt oldVotes, FHEUInt newVotes) internal {
-      uint32 blockNumber = safe32(block.number, "Comp::_writeCheckpoint: block number exceeds 32 bits");
-
-      if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
-          checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
-      } else {
-          checkpoints[delegatee][nCheckpoints] = Checkpoint(blockNumber, newVotes);
-          numCheckpoints[delegatee] = nCheckpoints + 1;
-      }
-
-      emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
-    }
-
     function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
         require(n < 2**32, errorMessage);
         return uint32(n);
-    }
-
-    function safe96(uint n, string memory errorMessage) internal pure returns (FHEUInt) {
-        require(n < 2**96, errorMessage);
-        return FHEUInt(n);
-    }
-
-    function add96(FHEUInt a, FHEUInt b, string memory errorMessage) internal pure returns (FHEUInt) {
-        FHEUInt c = a + b;
-        require(c >= a, errorMessage);
-        return c;
-    }
-
-    function sub96(FHEUInt a, FHEUInt b, string memory errorMessage) internal pure returns (FHEUInt) {
-        require(b <= a, errorMessage);
-        return a - b;
     }
 
     function getChainId() internal view returns (uint) {
