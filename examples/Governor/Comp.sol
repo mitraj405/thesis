@@ -16,10 +16,13 @@ contract Comp {
     uint8 public constant decimals = 18;
 
     /// @notice Total number of tokens in circulation
-    FHEUInt public totalSupply;
+    FHEUInt public totalSupply = FHEUInt.wrap(0);
 
     /// @notice owner address
     address public contractOwner;
+
+    /// @notice allowed smart contract
+    address public allowedContract;
 
     /// @notice Allowance amounts on behalf of others
     mapping (address => mapping (address => FHEUInt)) internal allowances;
@@ -71,11 +74,24 @@ contract Comp {
       contractOwner = account;
     }
 
+    /**
+     * @notice Init total supply of the contract
+     * @param encryptedAmount The amount of token to create
+     */
     function initSupply(bytes calldata encryptedAmount) public onlyContractOwner {
+        Common.requireCt(FHEOps.lte(totalSupply, FHEUInt.wrap(0)));
         FHEUInt amount = Ciphertext.verify(encryptedAmount);
         totalSupply = amount;
         balances[contractOwner] = amount;
         emit Transfer(address(0), contractOwner, amount);
+    }
+
+    /**
+     * @notice Set allowed contract that can access votes
+     * @param contractAddress The address of the smart contract which may access votes
+     */
+    function setAllowedContract(address contractAddress) public onlyContractOwner {
+        allowedContract = contractAddress;
     }
 
     /**
@@ -223,15 +239,6 @@ contract Comp {
       emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
     }
 
-
-
-
-
-
-
-
-
-
     /**
      * @notice Delegate votes from `msg.sender` to `delegatee`
      * @param delegatee The address to delegate votes to
@@ -265,7 +272,7 @@ contract Comp {
      * @param account The address to get votes balance
      * @return The number of current votes for `account`
      */
-    function getCurrentVotes(address account) external view returns (FHEUInt) {
+    function getCurrentVotes(address account) external view onlyAllowedContract returns (FHEUInt)  {
         uint32 nCheckpoints = numCheckpoints[account];
         return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : FHEUInt.wrap(0);
     }
@@ -277,7 +284,7 @@ contract Comp {
      * @param blockNumber The block number to get the vote balance at
      * @return The number of votes the account had as of the given block
      */
-    function getPriorVotes(address account, uint blockNumber) public view returns (FHEUInt) {
+    function getPriorVotes(address account, uint blockNumber) public view onlyAllowedContract returns (FHEUInt) {
         require(blockNumber < block.number, "Comp::getPriorVotes: not yet determined");
 
         uint32 nCheckpoints = numCheckpoints[account];
@@ -334,6 +341,11 @@ contract Comp {
 
     modifier onlyContractOwner() {
         require(msg.sender == contractOwner);
+        _;
+    }
+
+    modifier onlyAllowedContract() {
+        require(msg.sender == allowedContract);
         _;
     }
 }
