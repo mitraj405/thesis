@@ -156,12 +156,9 @@ contract GovernorZama {
         bytes[] memory calldatas,
         string memory description
     ) public returns (uint) {
-        FHEUInt encrypted_proposal_threshold = Ciphertext.from(
-            uint8(proposalThreshold())
-        );
         Common.requireCt(
             FHEOps.lte(
-                encrypted_proposal_threshold,
+                Ciphertext.from(uint8(proposalThreshold())), 
                 comp.getPriorVotes(msg.sender, sub256(block.number, 1))
             )
         );
@@ -305,14 +302,10 @@ contract GovernorZama {
 
         Proposal storage proposal = proposals[proposalId];
 
-        FHEUInt encrypted_proposal_threshold = Ciphertext.from(
-            uint8(proposalThreshold())
-        );
-
         try
             Common.requireCt(
                 FHEOps.lte(
-                    encrypted_proposal_threshold,
+                    Ciphertext.from(uint8(proposalThreshold())),
                     comp.getPriorVotes(
                         proposal.proposer,
                         sub256(block.number, 1)
