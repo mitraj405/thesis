@@ -10,7 +10,7 @@ type FHEUInt is uint256;
 library Common {
     // Requires that the `ciphertext` is true.
     // If true, the runction returns. Otherwise, it reverts.
-    function requireCt(FHEUInt ciphertext) internal view {
+    function requireCt(FHEUInt ciphertext) external view {
         bytes32[1] memory input;
         input[0] = bytes32(FHEUInt.unwrap(ciphertext));
         uint256 inputLen = 32;
