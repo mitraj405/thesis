@@ -8,9 +8,6 @@ import "../abstracts/EIP712WithModifier.sol";
 import "../lib/TFHE.sol";
 
 contract DecentralizedId is EIP712WithModifier {
-    // used for output authorization
-    bytes32 private DOMAIN_SEPARATOR;
-
     // A mapping from address to an encrypted balance.
     mapping(address => mapping(string => euint32)) internal identifiers;
 
