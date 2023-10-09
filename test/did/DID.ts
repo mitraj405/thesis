@@ -20,12 +20,12 @@ describe('DecentralizedId', function () {
   });
 
   it('should add identifier', async function () {
+    const bobDid = 'did:zama:0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
+
     const encryptedBirth = this.instances.alice.encrypt32(495873907);
-    const transaction = await this.did['setIdentifier(address,string,bytes)'](
-      this.signers.bob.address,
-      'birthdate',
-      encryptedBirth,
-    );
+    const tx1 = await this.did.registerDID(this.signers.bob.address, bobDid);
+    await tx1.wait();
+    const transaction = await this.did['setIdentifier(string,string,bytes)'](bobDid, 'birthdate', encryptedBirth);
     await transaction.wait();
 
     // Bob sign a token to give access to Carol
@@ -33,7 +33,6 @@ describe('DecentralizedId', function () {
     const network = await provider.getNetwork();
     const chainId = +network.chainId.toString(); // Need to be a number
     const bobToken = getToken(chainId, this.contractAddress, 'birthdate', this.signers.carol.address);
-    console.log(bobToken);
     const bobSignature = await this.signers.bob.signTypedData(bobToken.domain, bobToken.types, bobToken.message);
 
     // Carol use this token to access information
@@ -44,7 +43,7 @@ describe('DecentralizedId', function () {
 
     const encryptedBirthdate = await this.did
       .connect(this.signers.carol)
-      .getIdentifier(this.signers.bob.address, 'birthdate', bobSignature, token.publicKey, token.signature);
+      .getIdentifier(bobDid, 'birthdate', bobSignature, token.publicKey, token.signature);
     const birthdate = this.instances.carol.decrypt(this.contractAddress, encryptedBirthdate);
 
     expect(birthdate).to.be.equal(495873907);

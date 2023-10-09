@@ -9,7 +9,13 @@ import "../lib/TFHE.sol";
 
 contract DecentralizedId is EIP712WithModifier {
     // A mapping from address to an encrypted balance.
-    mapping(address => mapping(string => euint32)) internal identifiers;
+    mapping(string => Identity) internal identities;
+
+    struct Identity {
+        address owner;
+        string did;
+        mapping(string => euint32) identifiers;
+    }
 
     // The owner of the contract.
     address public contractOwner;
@@ -18,44 +24,63 @@ contract DecentralizedId is EIP712WithModifier {
         contractOwner = msg.sender;
     }
 
-    function setIdentifier(address user, string calldata name, bytes calldata encryptedValue) public onlyContractOwner {
+    function registerDID(address user, string calldata did) public onlyOrganization {
+        require(bytes(did).length > 0, "DID cannot be empty");
+        require(identities[did].owner == address(0), "DID already exists");
+        Identity storage newIdentity = identities[did];
+        newIdentity.owner = user;
+        newIdentity.did = did;
+    }
+
+    function setIdentifier(
+        string memory did,
+        string memory identifier,
+        bytes calldata encryptedValue
+    ) public onlyOrganization {
         euint32 value = TFHE.asEuint32(encryptedValue);
-        setIdentifier(user, name, value);
+        setIdentifier(did, identifier, value);
     }
 
-    function setIdentifier(address user, string calldata name, euint32 value) public onlyContractOwner {
-        identifiers[user][name] = value;
+    function setIdentifier(string memory did, string memory identifier, euint32 value) public onlyOrganization {
+        identities[did].identifiers[identifier] = value;
     }
 
-    function getIdentifier(address user, string calldata name, bytes calldata signature) public view returns (euint32) {
-        return _getIdentifier(user, name, signature);
+    function getIdentifier(
+        string memory did,
+        string memory identifier,
+        bytes calldata signature
+    ) public view returns (euint32) {
+        return _getIdentifier(did, identifier, signature);
     }
 
     // Sets the balance of the owner to the given encrypted balance.
     function getIdentifier(
-        address user,
-        string calldata identifier,
+        string memory did,
+        string memory identifier,
         bytes calldata sign,
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(_getIdentifier(user, identifier, sign), publicKey, 0);
+        return TFHE.reencrypt(_getIdentifier(did, identifier, sign), publicKey, 0);
     }
 
     // Sets the balance of the owner to the given encrypted balance.
     function _getIdentifier(
-        address user,
-        string calldata identifier,
+        string memory did,
+        string memory identifier,
         bytes calldata signature
-    ) internal view onlyAllowedUser(user, identifier, signature) returns (euint32) {
-        return identifiers[user][identifier];
+    ) internal view onlyAllowedUser(did, identifier, signature) returns (euint32) {
+        require(identities[did].owner != address(0), "DID doesn't exist");
+        return identities[did].identifiers[identifier];
     }
 
     modifier onlyAllowedUser(
-        address user,
-        string calldata identifier,
+        string memory did,
+        string memory identifier,
         bytes calldata signature
     ) {
+        require(identities[did].owner != address(0), "DID doesn't exist");
+        address user = identities[did].owner;
         bytes32 digest = _hashTypedDataV4(
             keccak256(
                 abi.encode(
@@ -70,7 +95,7 @@ contract DecentralizedId is EIP712WithModifier {
         _;
     }
 
-    modifier onlyContractOwner() {
+    modifier onlyOrganization() {
         require(msg.sender == contractOwner);
         _;
     }
