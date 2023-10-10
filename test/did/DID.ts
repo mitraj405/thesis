@@ -19,19 +19,49 @@ describe('DecentralizedId', function () {
     this.instances = await createInstances(this.contractAddress, ethers, this.signers);
   });
 
-  it('should add identifier', async function () {
-    // const bobDid = 'did:zama:0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
-
-    const encryptedBirth = this.instances.alice.encrypt32(495873907);
-    const tx1 = await this.did.registerDID(this.signers.bob.address);
-    const bobDid = await new Promise<string>((resolve) => {
-      this.did.on(this.did.getEvent('NewDid'), (from, to, value) => {
-        resolve(value.args[0]);
-      });
-    });
+  it('should add ebool identifier', async function () {
+    const bobDid = 'did:zama:1234';
+    const encryptedTrue = this.instances.alice.encrypt8(1);
+    const tx1 = await this.did.addId(bobDid, this.signers.bob.address);
     await tx1.wait();
 
-    const transaction = await this.did['setIdentifier(string,string,bytes)'](bobDid, 'birthdate', encryptedBirth);
+    const transaction = await this.did['setIdentifierBool(string,string,bytes)'](bobDid, 'legalAge', encryptedTrue);
+    await transaction.wait();
+
+    // Bob sign a token to give access to Carol
+    const provider = ethers.provider;
+    const network = await provider.getNetwork();
+    const chainId = +network.chainId.toString(); // Need to be a number
+
+    const bobToken = getToken(chainId, this.contractAddress, 'legalAge', this.signers.carol.address);
+    const bobSignature = await this.signers.bob.signTypedData(bobToken.domain, bobToken.types, bobToken.message);
+    // Carol use this token to access information
+    const token = this.instances.carol.getTokenSignature(this.contractAddress) || {
+      signature: '',
+      publicKey: '',
+    };
+
+    const encryptedBool = await this.did
+      .connect(this.signers.carol)
+      ['getIdentifier(string,string,bytes,bytes32,bytes)'](
+        bobDid,
+        'legalAge',
+        bobSignature,
+        token.publicKey,
+        token.signature,
+      );
+    const bool = this.instances.carol.decrypt(this.contractAddress, encryptedBool);
+
+    expect(bool).to.be.equal(1);
+  });
+
+  it('should add euint32 identifier', async function () {
+    const bobDid = 'did:zama:1234';
+    const tx1 = await this.did.addId(bobDid, this.signers.bob.address);
+    await tx1.wait();
+
+    const encryptedBirth = this.instances.alice.encrypt32(495873907);
+    const transaction = await this.did['setIdentifier32(string,string,bytes)'](bobDid, 'birthdate', encryptedBirth);
     await transaction.wait();
 
     // Bob sign a token to give access to Carol
@@ -59,5 +89,43 @@ describe('DecentralizedId', function () {
     const birthdate = this.instances.carol.decrypt(this.contractAddress, encryptedBirthdate);
 
     expect(birthdate).to.be.equal(495873907);
+  });
+
+  it('should remove did', async function () {
+    const bobDid = 'did:zama:1234';
+    const tx1 = await this.did.addId(bobDid, this.signers.bob.address);
+    await tx1.wait();
+
+    const encryptedBirth = this.instances.alice.encrypt32(495873907);
+    const tx2 = await this.did['setIdentifier32(string,string,bytes)'](bobDid, 'birthdate', encryptedBirth);
+    await tx2.wait();
+
+    const tx3 = await this.did.removeId(bobDid);
+    await tx3.wait();
+
+    // Bob sign a token to give access to Carol
+    const provider = ethers.provider;
+    const network = await provider.getNetwork();
+    const chainId = +network.chainId.toString(); // Need to be a number
+    const bobToken = getToken(chainId, this.contractAddress, 'birthdate', this.signers.carol.address);
+    const bobSignature = await this.signers.bob.signTypedData(bobToken.domain, bobToken.types, bobToken.message);
+
+    // Carol use this token to access information
+    const token = this.instances.carol.getTokenSignature(this.contractAddress) || {
+      signature: '',
+      publicKey: '',
+    };
+
+    expect(
+      this.did
+        .connect(this.signers.carol)
+        ['getIdentifier(string,string,bytes,bytes32,bytes)'](
+          bobDid,
+          'birthdate',
+          bobSignature,
+          token.publicKey,
+          token.signature,
+        ),
+    ).to.throw;
   });
 });

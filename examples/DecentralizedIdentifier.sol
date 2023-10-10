@@ -17,19 +17,21 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
     struct Identity {
         address owner;
         string did;
-        mapping(string => euint32) identifiers;
+        mapping(string => Identifier) identifiers;
+    }
+
+    struct Identifier {
+        euint32 encrypted32;
+        ebool encryptedBool;
     }
 
     event NewDid(string did, address owner);
+    event RemoveDid(string did);
 
     constructor() EIP712WithModifier("Authorization token", "1") {}
 
-    function registerDID(address owner) public onlyOwner {
-        string memory prefix = "did:zama:";
-        string memory hash = Strings.toString(
-            uint160(uint(keccak256(abi.encodePacked(owner, blockhash(block.number)))))
-        );
-        string memory did = string.concat(prefix, hash);
+    function addId(string calldata did, address owner) public onlyOwner {
+        require(identities[did].owner == address(0), "This did already exists");
         Identity storage newIdentity = identities[did];
         newIdentity.owner = owner;
         newIdentity.did = did;
@@ -37,42 +39,75 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
         emit NewDid(did, owner);
     }
 
-    function setIdentifier(
+    function removeId(string calldata did) public onlyOwner {
+        require(identities[did].owner != address(0), "This did doesn't exist");
+        delete identities[did];
+
+        emit RemoveDid(did);
+    }
+
+    function setIdentifierBool(
+        string memory did,
+        string memory identifier,
+        bytes calldata encryptedValue
+    ) public onlyOwner {
+        ebool value = TFHE.asEbool(encryptedValue);
+        setIdentifierBool(did, identifier, value);
+    }
+
+    function setIdentifierBool(string memory did, string memory identifier, ebool value) public onlyOwner {
+        Identifier storage ident = identities[did].identifiers[identifier];
+        ident.encryptedBool = value;
+    }
+
+    function setIdentifier32(
         string memory did,
         string memory identifier,
         bytes calldata encryptedValue
     ) public onlyOwner {
         euint32 value = TFHE.asEuint32(encryptedValue);
-        setIdentifier(did, identifier, value);
+        setIdentifier32(did, identifier, value);
     }
 
-    function setIdentifier(string memory did, string memory identifier, euint32 value) public onlyOwner {
-        identities[did].identifiers[identifier] = value;
+    function setIdentifier32(string memory did, string memory identifier, euint32 value) public onlyOwner {
+        Identifier storage ident = identities[did].identifiers[identifier];
+        ident.encrypted32 = value;
     }
 
     function getIdentifier(
         string memory did,
         string memory identifier,
         bytes calldata signature
-    ) public view returns (euint32) {
-        return _getIdentifier(did, identifier, signature);
+    ) public view returns (Identifier memory) {
+        Identifier storage ident = _getIdentifier(did, identifier, signature);
+        return ident;
     }
 
     function getIdentifier(
-        string memory did,
-        string memory identifier,
+        string calldata did,
+        string calldata identifier,
         bytes calldata sign,
         bytes32 publicKey,
         bytes calldata signature
     ) public view onlySignedPublicKey(publicKey, signature) returns (bytes memory) {
-        return TFHE.reencrypt(_getIdentifier(did, identifier, sign), publicKey, 0);
+        Identifier storage ident = _getIdentifier(did, identifier, sign);
+        require(
+            TFHE.isInitialized(ident.encrypted32) || ebool.unwrap(ident.encryptedBool) != 0,
+            "This identifier is unknown"
+        );
+
+        if (TFHE.isInitialized(ident.encrypted32)) {
+            return TFHE.reencrypt(ident.encrypted32, publicKey, 0);
+        }
+
+        return TFHE.reencrypt(ident.encryptedBool, publicKey);
     }
 
     function _getIdentifier(
         string memory did,
         string memory identifier,
         bytes calldata signature
-    ) internal view onlyAllowedUser(did, identifier, signature) returns (euint32) {
+    ) internal view onlyAllowedUser(did, identifier, signature) returns (Identifier storage) {
         require(identities[did].owner != address(0), "DID doesn't exist");
         return identities[did].identifiers[identifier];
     }

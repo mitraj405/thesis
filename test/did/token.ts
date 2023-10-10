@@ -16,7 +16,7 @@ export type EIP712 = {
   };
 };
 
-export const getToken = (chainId: number, verifyingContract: string, identifier: string, allowed: string): EIP712 => ({
+export const getToken = (chainId: number, verifyingContract: string, name: string, allowed: string): EIP712 => ({
   types: {
     // Refer to primaryType.
     DecentralizedId: [
@@ -40,7 +40,7 @@ export const getToken = (chainId: number, verifyingContract: string, identifier:
     verifyingContract,
   },
   message: {
-    identifier,
+    identifier: name,
     allowed,
   },
 });
