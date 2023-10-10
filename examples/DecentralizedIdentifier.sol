@@ -2,6 +2,7 @@
 
 pragma solidity 0.8.19;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -9,7 +10,7 @@ import "../abstracts/EIP712WithModifier.sol";
 
 import "../lib/TFHE.sol";
 
-contract DecentralizedId is EIP712WithModifier {
+contract DecentralizedId is EIP712WithModifier, Ownable {
     // A mapping from address to an encrypted balance.
     mapping(string => Identity) internal identities;
 
@@ -19,16 +20,11 @@ contract DecentralizedId is EIP712WithModifier {
         mapping(string => euint32) identifiers;
     }
 
-    // The owner of the contract.
-    address public contractOwner;
-
     event NewDid(string did, address owner);
 
-    constructor() EIP712WithModifier("Authorization token", "1") {
-        contractOwner = msg.sender;
-    }
+    constructor() EIP712WithModifier("Authorization token", "1") {}
 
-    function registerDID(address owner) public onlyOrganization {
+    function registerDID(address owner) public onlyOwner {
         string memory prefix = "did:zama:";
         string memory hash = Strings.toString(
             uint160(uint(keccak256(abi.encodePacked(owner, blockhash(block.number)))))
@@ -45,12 +41,12 @@ contract DecentralizedId is EIP712WithModifier {
         string memory did,
         string memory identifier,
         bytes calldata encryptedValue
-    ) public onlyOrganization {
+    ) public onlyOwner {
         euint32 value = TFHE.asEuint32(encryptedValue);
         setIdentifier(did, identifier, value);
     }
 
-    function setIdentifier(string memory did, string memory identifier, euint32 value) public onlyOrganization {
+    function setIdentifier(string memory did, string memory identifier, euint32 value) public onlyOwner {
         identities[did].identifiers[identifier] = value;
     }
 
@@ -101,11 +97,6 @@ contract DecentralizedId is EIP712WithModifier {
         );
         address signer = ECDSA.recover(digest, signature);
         require(signer == user, "You don't have access");
-        _;
-    }
-
-    modifier onlyOrganization() {
-        require(msg.sender == contractOwner);
         _;
     }
 }
