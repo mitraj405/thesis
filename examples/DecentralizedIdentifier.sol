@@ -11,7 +11,7 @@ import "../abstracts/EIP712WithModifier.sol";
 import "../lib/TFHE.sol";
 
 contract DecentralizedId is EIP712WithModifier, Ownable {
-    // A mapping from address to an encrypted balance.
+    // A mapping from did to an identity.
     mapping(string => Identity) internal identities;
 
     struct Identity {
@@ -58,7 +58,6 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
         return _getIdentifier(did, identifier, signature);
     }
 
-    // Sets the balance of the owner to the given encrypted balance.
     function getIdentifier(
         string memory did,
         string memory identifier,
@@ -69,7 +68,6 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
         return TFHE.reencrypt(_getIdentifier(did, identifier, sign), publicKey, 0);
     }
 
-    // Sets the balance of the owner to the given encrypted balance.
     function _getIdentifier(
         string memory did,
         string memory identifier,
