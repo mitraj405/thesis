@@ -20,11 +20,17 @@ describe('DecentralizedId', function () {
   });
 
   it('should add identifier', async function () {
-    const bobDid = 'did:zama:0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
+    // const bobDid = 'did:zama:0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 
     const encryptedBirth = this.instances.alice.encrypt32(495873907);
-    const tx1 = await this.did.registerDID(this.signers.bob.address, bobDid);
+    const tx1 = await this.did.registerDID(this.signers.bob.address);
+    const bobDid = await new Promise<string>((resolve) => {
+      this.did.on(this.did.getEvent('NewDid'), (from, to, value) => {
+        resolve(value.args[0]);
+      });
+    });
     await tx1.wait();
+
     const transaction = await this.did['setIdentifier(string,string,bytes)'](bobDid, 'birthdate', encryptedBirth);
     await transaction.wait();
 
@@ -43,7 +49,13 @@ describe('DecentralizedId', function () {
 
     const encryptedBirthdate = await this.did
       .connect(this.signers.carol)
-      .getIdentifier(bobDid, 'birthdate', bobSignature, token.publicKey, token.signature);
+      ['getIdentifier(string,string,bytes,bytes32,bytes)'](
+        bobDid,
+        'birthdate',
+        bobSignature,
+        token.publicKey,
+        token.signature,
+      );
     const birthdate = this.instances.carol.decrypt(this.contractAddress, encryptedBirthdate);
 
     expect(birthdate).to.be.equal(495873907);

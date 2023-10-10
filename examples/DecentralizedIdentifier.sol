@@ -3,6 +3,8 @@
 pragma solidity 0.8.19;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
+
 import "../abstracts/EIP712WithModifier.sol";
 
 import "../lib/TFHE.sol";
@@ -20,16 +22,23 @@ contract DecentralizedId is EIP712WithModifier {
     // The owner of the contract.
     address public contractOwner;
 
+    event NewDid(string did, address owner);
+
     constructor() EIP712WithModifier("Authorization token", "1") {
         contractOwner = msg.sender;
     }
 
-    function registerDID(address user, string calldata did) public onlyOrganization {
-        require(bytes(did).length > 0, "DID cannot be empty");
-        require(identities[did].owner == address(0), "DID already exists");
+    function registerDID(address owner) public onlyOrganization {
+        string memory prefix = "did:zama:";
+        string memory hash = Strings.toString(
+            uint160(uint(keccak256(abi.encodePacked(owner, blockhash(block.number)))))
+        );
+        string memory did = string.concat(prefix, hash);
         Identity storage newIdentity = identities[did];
-        newIdentity.owner = user;
+        newIdentity.owner = owner;
         newIdentity.did = did;
+
+        emit NewDid(did, owner);
     }
 
     function setIdentifier(
