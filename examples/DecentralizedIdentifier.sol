@@ -22,6 +22,7 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
     struct Identifier {
         euint32 encrypted32;
         ebool encryptedBool;
+        string text;
     }
 
     event NewDid(string did, address owner);
@@ -49,44 +50,46 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
         return identities[did].owner;
     }
 
-    function setIdentifierBool(
-        string calldata did,
-        string calldata identifier,
-        bytes calldata encryptedValue
-    ) public onlyOwner {
+    function changeOwner(string calldata did, address newOwner) public onlyOwner {
+        identities[did].owner = newOwner;
+    }
+
+    function setIdentifier(string calldata did, string calldata identifier, string calldata value) public onlyOwner {
+        delete identities[did].identifiers[identifier];
+        Identifier storage ident = identities[did].identifiers[identifier];
+        ident.text = value;
+    }
+
+    function setIdentifierBool(string calldata did, string calldata identifier, bytes calldata encryptedValue) public {
         ebool value = TFHE.asEbool(encryptedValue);
         setIdentifierBool(did, identifier, value);
     }
 
     function setIdentifierBool(string calldata did, string calldata identifier, ebool value) public onlyOwner {
+        delete identities[did].identifiers[identifier];
         Identifier storage ident = identities[did].identifiers[identifier];
         ident.encryptedBool = value;
     }
 
-    function setIdentifier32(
-        string calldata did,
-        string calldata identifier,
-        bytes calldata encryptedValue
-    ) public onlyOwner {
+    function setIdentifier32(string calldata did, string calldata identifier, bytes calldata encryptedValue) public {
         euint32 value = TFHE.asEuint32(encryptedValue);
         setIdentifier32(did, identifier, value);
     }
 
     function setIdentifier32(string calldata did, string calldata identifier, euint32 value) public onlyOwner {
+        delete identities[did].identifiers[identifier];
         Identifier storage ident = identities[did].identifiers[identifier];
         ident.encrypted32 = value;
     }
 
-    function getIdentifier(
-        string calldata did,
-        string calldata identifier,
-        bytes calldata signature
-    ) public view returns (Identifier memory) {
-        Identifier storage ident = _getIdentifier(did, identifier, signature);
-        return ident;
+    function getIdentifier(string calldata did, string calldata identifier) public view returns (string memory) {
+        Identifier storage ident = identities[did].identifiers[identifier];
+        require(bytes(ident.text).length > 0, "This identifier is unknown");
+
+        return ident.text;
     }
 
-    function getIdentifier(
+    function reencryptIdentifier(
         string calldata did,
         string calldata identifier,
         bytes calldata sign,
@@ -106,6 +109,26 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
         return TFHE.reencrypt(ident.encryptedBool, publicKey);
     }
 
+    function getEboolIdentifier(
+        string calldata did,
+        string calldata identifier,
+        bytes calldata signature
+    ) public view returns (ebool) {
+        Identifier storage ident = _getIdentifier(did, identifier, signature);
+        require(ebool.unwrap(ident.encryptedBool) != 0, "This identifier is unknown");
+        return ident.encryptedBool;
+    }
+
+    function getEuint32Identifier(
+        string calldata did,
+        string calldata identifier,
+        bytes calldata signature
+    ) public view returns (euint32) {
+        Identifier storage ident = _getIdentifier(did, identifier, signature);
+        require(TFHE.isInitialized(ident.encrypted32), "This identifier is unknown");
+        return ident.encrypted32;
+    }
+
     function _getIdentifier(
         string calldata did,
         string calldata identifier,
@@ -116,7 +139,7 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
     }
 
     modifier onlyAllowedUser(
-        string memory did,
+        string calldata did,
         string memory identifier,
         bytes memory signature
     ) {
