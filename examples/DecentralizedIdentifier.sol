@@ -45,37 +45,41 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
         emit RemoveDid(did);
     }
 
+    function getOwner(string calldata did) public view returns (address) {
+        return identities[did].owner;
+    }
+
     function setIdentifierBool(
-        string memory did,
-        string memory identifier,
+        string calldata did,
+        string calldata identifier,
         bytes calldata encryptedValue
     ) public onlyOwner {
         ebool value = TFHE.asEbool(encryptedValue);
         setIdentifierBool(did, identifier, value);
     }
 
-    function setIdentifierBool(string memory did, string memory identifier, ebool value) public onlyOwner {
+    function setIdentifierBool(string calldata did, string calldata identifier, ebool value) public onlyOwner {
         Identifier storage ident = identities[did].identifiers[identifier];
         ident.encryptedBool = value;
     }
 
     function setIdentifier32(
-        string memory did,
-        string memory identifier,
+        string calldata did,
+        string calldata identifier,
         bytes calldata encryptedValue
     ) public onlyOwner {
         euint32 value = TFHE.asEuint32(encryptedValue);
         setIdentifier32(did, identifier, value);
     }
 
-    function setIdentifier32(string memory did, string memory identifier, euint32 value) public onlyOwner {
+    function setIdentifier32(string calldata did, string calldata identifier, euint32 value) public onlyOwner {
         Identifier storage ident = identities[did].identifiers[identifier];
         ident.encrypted32 = value;
     }
 
     function getIdentifier(
-        string memory did,
-        string memory identifier,
+        string calldata did,
+        string calldata identifier,
         bytes calldata signature
     ) public view returns (Identifier memory) {
         Identifier storage ident = _getIdentifier(did, identifier, signature);
@@ -103,8 +107,8 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
     }
 
     function _getIdentifier(
-        string memory did,
-        string memory identifier,
+        string calldata did,
+        string calldata identifier,
         bytes calldata signature
     ) internal view onlyAllowedUser(did, identifier, signature) returns (Identifier storage) {
         require(identities[did].owner != address(0), "DID doesn't exist");
@@ -114,7 +118,7 @@ contract DecentralizedId is EIP712WithModifier, Ownable {
     modifier onlyAllowedUser(
         string memory did,
         string memory identifier,
-        bytes calldata signature
+        bytes memory signature
     ) {
         require(identities[did].owner != address(0), "DID doesn't exist");
         address user = identities[did].owner;
